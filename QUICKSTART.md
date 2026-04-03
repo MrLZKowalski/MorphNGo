@@ -1,11 +1,11 @@
 # Quick Start Guide
 
-Get Adaptix up and running in 5 minutes.
+Get MorphNGo up and running in 5 minutes.
 
 ## 1. Install
 
 ```bash
-dotnet add package Adaptix
+dotnet add package MorphNGo
 ```
 
 ## 2. Create Your Classes
@@ -33,7 +33,7 @@ public class UserDto
 ## 3. Configure in Program.cs
 
 ```csharp
-builder.Services.AddAdaptixMapper(cfg =>
+builder.Services.AddMorphNGoMapper(cfg =>
 {
     cfg.CreateMap<User, UserDto>(map =>
     {
@@ -107,5 +107,5 @@ cfg.CreateMap<Order, OrderDto>(map =>
 ## Next Steps
 
 - **Need more?** See [COMPLETE_USER_GUIDE.md](COMPLETE_USER_GUIDE.md)
-- **Code examples?** Check [Examples.cs](src/Adaptix/Examples.cs)
+- **Code examples?** Check [Examples.cs](src/MorphNGo/Examples.cs)
 - **Issues?** Check the troubleshooting section in the complete guide

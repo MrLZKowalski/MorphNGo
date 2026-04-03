@@ -27,7 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Adaptix\MorphNGo.csproj" />
+    <ProjectReference Include="..\MorphNGo\MorphNGo.csproj" />
   </ItemGroup>
 
 </Project>
