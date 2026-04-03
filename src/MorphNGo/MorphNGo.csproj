@@ -7,7 +7,7 @@
 		<Authors>MrLZKowalski</Authors>
 		<Description>A simple .NET library for mapping data between objects. No complex configurations, just straightforward transformations.</Description>
 		<PackageTags>mapping;object-mapper;dto;type-mapping;data-transformation;converter;dotnet;csharp;reflection</PackageTags>
-		<RepositoryUrl>https://github.com/MrLZKowalski/Adaptix</RepositoryUrl>
+		<RepositoryUrl>https://github.com/MrLZKowalski/MorphNGoMorphNGo</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>

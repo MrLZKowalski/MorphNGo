@@ -1,6 +1,6 @@
 # Complete User Guide
 
-Full guide for using Adaptix. Pick what you need.
+Full guide for using MorphNGo. Pick what you need.
 
 ## Table of Contents
 
@@ -16,7 +16,7 @@ Full guide for using Adaptix. Pick what you need.
 
 ## The Basics
 
-Adaptix maps properties from one object to another. Properties with matching names map automatically.
+MorphNGo maps properties from one object to another. Properties with matching names map automatically.
 
 ### Simple Example
 
@@ -68,7 +68,7 @@ var dtoEnumerable = users.AsEnumerable()
 
 ## Nested Objects
 
-Adaptix maps nested objects automatically when both type mappings are configured:
+MorphNGo maps nested objects automatically when both type mappings are configured:
 
 ```csharp
 // Configure both mappings
@@ -93,7 +93,7 @@ var dto = mapper.Map<UserDto>(user);
 In `Program.cs`:
 
 ```csharp
-builder.Services.AddAdaptixMapper(cfg =>
+builder.Services.AddMorphNGoMapper(cfg =>
 {
     cfg.CreateMap<User, UserDto>();
     cfg.CreateMap<Order, OrderDto>();
@@ -339,13 +339,13 @@ Choose how long the mapper lives:
 
 ```csharp
 // Singleton - one instance for entire app (recommended)
-builder.Services.AddAdaptixMapper(cfg => { }, ServiceLifetime.Singleton);
+builder.Services.AddMorphNGoMapper(cfg => { }, ServiceLifetime.Singleton);
 
 // Scoped - new per HTTP request
-builder.Services.AddAdaptixMapper(cfg => { }, ServiceLifetime.Scoped);
+builder.Services.AddMorphNGoMapper(cfg => { }, ServiceLifetime.Scoped);
 
 // Transient - new every time
-builder.Services.AddAdaptixMapper(cfg => { }, ServiceLifetime.Transient);
+builder.Services.AddMorphNGoMapper(cfg => { }, ServiceLifetime.Transient);
 ```
 
 For most applications, **Singleton is recommended** - the mapper is thread-safe and can be reused.
@@ -411,7 +411,7 @@ public static class MappingConfiguration
 }
 
 // In Program.cs
-builder.Services.AddAdaptixMapper(cfg =>
+builder.Services.AddMorphNGoMapper(cfg =>
 {
     MappingConfiguration.ConfigureUserMappings(cfg);
     MappingConfiguration.ConfigureOrderMappings(cfg);
@@ -424,7 +424,7 @@ Configure all mappings at startup, not during mapping:
 
 ```csharp
 // ✅ Good
-builder.Services.AddAdaptixMapper(cfg =>
+builder.Services.AddMorphNGoMapper(cfg =>
 {
     cfg.CreateMap<User, UserDto>();
     cfg.CreateMap<Order, OrderDto>();
@@ -499,7 +499,7 @@ You forgot to register the mapping.
 
 ```csharp
 // Add this
-builder.Services.AddAdaptixMapper(cfg =>
+builder.Services.AddMorphNGoMapper(cfg =>
 {
     cfg.CreateMap<MySource, MyDest>();  // <-- Add this
 });
@@ -523,7 +523,7 @@ cfg.CreateMap<Source, Dest>(map =>
 
 ## Null Reference Exception
 
-Adaptix handles nulls, but check if your custom logic does:
+MorphNGo handles nulls, but check if your custom logic does:
 
 ```csharp
 // Safe
@@ -559,7 +559,7 @@ Use Singleton lifetime and avoid recreating configurations:
 
 ```csharp
 // Once at startup
-builder.Services.AddAdaptixMapper(cfg => 
+builder.Services.AddMorphNGoMapper(cfg => 
 {
     // All configurations here
 }, ServiceLifetime.Singleton);  // Singleton!
@@ -611,5 +611,5 @@ A: Use custom mapping functions or write the transformation in your service laye
 ## See Also
 
 - [Quick Start](QUICKSTART.md)
-- [Code Examples](src/Adaptix/Examples.cs)
-- [Tests](src/Adaptix.UnitTests/) - Real-world examples in test code
+- [Code Examples](src/MorphNGo/Examples.cs)
+- [Tests](src/MorphNGo.UnitTests/) - Real-world examples in test code

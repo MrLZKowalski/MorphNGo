@@ -1,4 +1,4 @@
 <Solution>
-  <Project Path="src/Adaptix.UnitTests/MorphNGo.UnitTests.csproj" />
-  <Project Path="src/Adaptix/MorphNGo.csproj" />
+  <Project Path="src/MorphNGo.UnitTests/MorphNGo.UnitTests.csproj" />
+  <Project Path="src/MorphNGo/MorphNGo.csproj" />
 </Solution>
