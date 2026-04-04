@@ -5,6 +5,7 @@ using MorphNGo.Mapping.Interfaces;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Linq.Expressions;
 
 /// <summary>
 /// The core mapper that performs type-to-type mapping operations.
@@ -15,9 +16,13 @@ internal class Mapper : IMapper
 {
     private readonly ILogger _logger;
     private readonly Dictionary<(Type Source, Type Destination), ITypeMapping> _mappingByPair;
+    private readonly Dictionary<(Type Source, Type Destination), Action<object, object>> _simpleCopiers = new();
     private readonly ConcurrentDictionary<Type, PropertyInfo[]> _destinationPropertiesByType = new();
     private readonly ConcurrentDictionary<(Type SourceType, string Name), PropertyInfo?> _sourcePropertyByTypeAndName = new();
+    private readonly ConcurrentDictionary<(Type, string), Func<object, object?>> _compiledPropertyGetters = new();
+    private readonly ConcurrentDictionary<(Type, string), Action<object, object?>> _compiledPropertySetters = new();
     private readonly ConcurrentDictionary<Type, MethodInfo> _invokeMethodByDelegateType = new();
+    private readonly ConcurrentDictionary<Type, Func<object>> _destinationFactories = new();
     private static readonly ConcurrentDictionary<Type, bool> IsCollectionByType = new();
     private static readonly BindingFlags PropertyBindingFlags = BindingFlags.Public | BindingFlags.IgnoreCase | BindingFlags.Instance;
 
@@ -36,6 +41,16 @@ internal class Mapper : IMapper
                 _mappingByPair[key] = m;
             }
         }
+
+        var compiledBuilder = new CompiledCopierBuilder(FindMapping);
+        foreach (var m in _mappingByPair.Values)
+        {
+            var copier = compiledBuilder.Build(m);
+            if (copier != null)
+            {
+                _simpleCopiers[(m.SourceType, m.DestinationType)] = copier;
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -51,12 +66,9 @@ internal class Mapper : IMapper
         var destinationType = typeof(TDestination);
         if (source == null)
         {
-            _logger.LogDebug("Source object is null, creating default instance of {DestinationType}", destinationType.Name);
-            return (TDestination)(Activator.CreateInstance(destinationType)
-                ?? throw new InvalidOperationException($"Cannot create instance of {destinationType}"));
+            return (TDestination)CreateDestinationInstance(destinationType);
         }
 
-        _logger.LogDebug("Mapping {SourceType} to {DestinationType}", source.GetType().Name, destinationType.Name);
         var result = Map(source, destinationType, parameters);
         return (TDestination)result;
     }
@@ -64,7 +76,7 @@ internal class Mapper : IMapper
     /// <inheritdoc />
     public object Map(object source, Type destinationType)
     {
-        return Map(source, destinationType, Array.Empty<object>());
+        return Map(source, destinationType, []);
     }
 
     /// <inheritdoc />
@@ -75,9 +87,7 @@ internal class Mapper : IMapper
 
         if (source == null)
         {
-            _logger.LogDebug("Source object is null for destination type {DestinationType}, creating default instance", destinationType.Name);
-            return Activator.CreateInstance(destinationType)
-                ?? throw new InvalidOperationException($"Cannot create instance of {destinationType}");
+            return CreateDestinationInstance(destinationType);
         }
 
         var sourceType = source.GetType();
@@ -90,14 +100,13 @@ internal class Mapper : IMapper
                 $"No mapping configured from {sourceType.Name} to {destinationType.Name}");
         }
 
-        _logger.LogDebug("Mapping found from {SourceType} to {DestinationType}", sourceType.Name, destinationType.Name);
         return MapUsingResolvedMapping(source, destinationType, parameters, mapping);
     }
 
     /// <inheritdoc />
     public TDestination MapTo<TDestination>(object source, TDestination destination)
     {
-        return MapTo(source, destination, Array.Empty<object>());
+        return MapTo(source, destination, []);
     }
 
     /// <inheritdoc />
@@ -148,25 +157,48 @@ internal class Mapper : IMapper
     /// </summary>
     private object MapUsingResolvedMapping(object source, Type destinationType, object?[] parameters, ITypeMapping mapping)
     {
+        var sourceRuntimeType = source.GetType();
+
         if (mapping.PreMappingCondition != null && !InvokeCondition(mapping.PreMappingCondition, source))
         {
-            _logger.LogWarning("Pre-mapping condition failed for {SourceType} to {DestinationType}", source.GetType().Name, destinationType.Name);
+            _logger.LogWarning("Pre-mapping condition failed for {SourceType} to {DestinationType}", sourceRuntimeType.Name, destinationType.Name);
             throw new InvalidOperationException(
-                $"Pre-mapping condition failed for {source.GetType().Name} to {destinationType.Name}");
+                $"Pre-mapping condition failed for {sourceRuntimeType.Name} to {destinationType.Name}");
         }
 
-        var destination = Activator.CreateInstance(destinationType)
-            ?? throw new InvalidOperationException($"Cannot create instance of {destinationType}");
+        if (parameters.Length == 0 &&
+            _simpleCopiers.TryGetValue((sourceRuntimeType, destinationType), out var simpleCopy))
+        {
+            var destinationFast = CreateDestinationInstance(destinationType);
+            simpleCopy(source, destinationFast);
+            return destinationFast;
+        }
+
+        var destination = CreateDestinationInstance(destinationType);
 
         if (mapping.CustomMapFunction != null)
         {
-            _logger.LogDebug("Using custom map function for {SourceType} to {DestinationType}", source.GetType().Name, destinationType.Name);
             return InvokeMapFunction(mapping.CustomMapFunction, source, destination);
         }
 
-        _logger.LogDebug("Applying property mappings for {SourceType} to {DestinationType}", source.GetType().Name, destinationType.Name);
         ApplyPropertyMappings(source, destination, mapping, parameters);
         return destination;
+    }
+
+    private object CreateDestinationInstance(Type destinationType) =>
+        _destinationFactories.GetOrAdd(destinationType, BuildDestinationFactory)();
+
+    private static Func<object> BuildDestinationFactory(Type destinationType)
+    {
+        try
+        {
+            return Expression.Lambda<Func<object>>(Expression.New(destinationType)).Compile();
+        }
+        catch (Exception)
+        {
+            return () => Activator.CreateInstance(destinationType)
+                ?? throw new InvalidOperationException($"Cannot create instance of {destinationType}");
+        }
     }
 
     private void ApplyPropertyMappings(object source, object destination, ITypeMapping mapping, object?[] parameters)
@@ -240,13 +272,66 @@ internal class Mapper : IMapper
             return;
         }
 
-        var sourceValue = sourceProperty.GetValue(source);
+        var getter = _compiledPropertyGetters.GetOrAdd(
+            (sourceType, sourceProperty.Name),
+            BuildPropertyGetter);
+
+        var sourceValue = getter(source);
         if (sourceValue == null)
         {
             return;
         }
 
-        TransformAndSetValue(destination, destProperty, sourceValue, mapping, Array.Empty<object>());
+        var setter = _compiledPropertySetters.GetOrAdd(
+            (destination.GetType(), destProperty.Name),
+            BuildPropertySetter);
+
+        TransformAndSetValue(destination, destProperty, sourceValue, mapping, Array.Empty<object>(), setter);
+    }
+
+    private static Func<object, object?> BuildPropertyGetter((Type Type, string Name) key)
+    {
+        var prop = key.Type.GetProperty(key.Name, PropertyBindingFlags);
+        if (prop?.CanRead == false)
+        {
+            return _ => null;
+        }
+
+        try
+        {
+            var param = Expression.Parameter(typeof(object), "obj");
+            var instance = Expression.Convert(param, key.Type);
+            var propAccess = Expression.Property(instance, prop!);
+            var boxed = Expression.Convert(propAccess, typeof(object));
+            return Expression.Lambda<Func<object, object?>>(boxed, param).Compile();
+        }
+        catch
+        {
+            return obj => prop?.GetValue(obj);
+        }
+    }
+
+    private static Action<object, object?> BuildPropertySetter((Type Type, string Name) key)
+    {
+        var prop = key.Type.GetProperty(key.Name, PropertyBindingFlags);
+        if (prop?.CanWrite == false)
+        {
+            return (_, _) => { };
+        }
+
+        try
+        {
+            var objParam = Expression.Parameter(typeof(object), "obj");
+            var valParam = Expression.Parameter(typeof(object), "val");
+            var instance = Expression.Convert(objParam, key.Type);
+            var value = Expression.Convert(valParam, prop!.PropertyType);
+            var assignment = Expression.Assign(Expression.Property(instance, prop), value);
+            return Expression.Lambda<Action<object, object?>>(assignment, objParam, valParam).Compile();
+        }
+        catch
+        {
+            return (obj, val) => prop?.SetValue(obj, val);
+        }
     }
 
     private object? GetMappingValue(object source, IPropertyMapping propertyMapping, object?[] parameters)
@@ -280,19 +365,18 @@ internal class Mapper : IMapper
         PropertyInfo destProperty,
         object value,
         ITypeMapping mapping,
-        object?[] parameters)
+        object?[] parameters,
+        Action<object, object?>? compiledSetter = null)
     {
         var mappedValue = value;
 
         if (mapping.ValueTransformers.TryGetValue(destProperty.PropertyType.Name, out var transformer))
         {
-            _logger.LogDebug("Applying value transformer for property {PropertyName} of type {PropertyType}", destProperty.Name, destProperty.PropertyType.Name);
             mappedValue = InvokeDelegate(transformer, mappedValue);
         }
 
         if (IsCollection(destProperty.PropertyType) && mappedValue is IEnumerable sourceCollection && mappedValue is not string)
         {
-            _logger.LogDebug("Mapping collection property {PropertyName} to type {PropertyType}", destProperty.Name, destProperty.PropertyType.Name);
             mappedValue = MapCollectionToDestinationType(sourceCollection, destProperty.PropertyType, parameters);
         }
         else if (mappedValue != null && IsComplexType(mappedValue.GetType()) && mappedValue is not string)
@@ -300,12 +384,18 @@ internal class Mapper : IMapper
             var nestedMapping = FindMapping(mappedValue.GetType(), destProperty.PropertyType);
             if (nestedMapping != null)
             {
-                _logger.LogDebug("Mapping nested object in property {PropertyName} from {SourceType} to {DestinationType}", destProperty.Name, mappedValue.GetType().Name, destProperty.PropertyType.Name);
                 mappedValue = MapUsingResolvedMapping(mappedValue, destProperty.PropertyType, parameters, nestedMapping);
             }
         }
 
-        destProperty.SetValue(destination, mappedValue);
+        if (compiledSetter != null)
+        {
+            compiledSetter(destination, mappedValue);
+        }
+        else
+        {
+            destProperty.SetValue(destination, mappedValue);
+        }
     }
 
     private object MapCollectionToDestinationType(IEnumerable sourceCollection, Type destinationType, object?[] parameters)
@@ -420,11 +510,9 @@ internal class Mapper : IMapper
 
             if (invokeParameters.Length == 2)
             {
-                _logger.LogDebug("Invoking delegate with source and parameters array");
                 return invokeMethod.Invoke(del, [source, parameters]);
             }
 
-            _logger.LogDebug("Invoking delegate with source parameter only");
             return invokeMethod.Invoke(del, [source]);
         }
         catch (Exception ex)

@@ -63,7 +63,8 @@ public interface IMapper
     TDestination MapTo<TDestination>(object source, TDestination destination, params object[] parameters);
 
     /// <summary>
-    /// Maps a collection of source objects to the destination collection type.
+    /// Maps a collection of source objects to the destination item type.
+    /// The result is materialized (typically a list) with one mapping per element.
     /// </summary>
     /// <typeparam name="TDestination">The destination item type.</typeparam>
     /// <param name="source">The source collection.</param>
