@@ -131,6 +131,28 @@ public class BasicMappingTests
     }
 
     [Fact]
+    public void Test_MapCollection_WithNullSourceItems_ProducesDefaultDtos()
+    {
+        var config = new MapperConfiguration(GetLogger(), cfg => cfg.CreateMap<User, UserDto>());
+        var mapper = config.CreateMapper();
+        var mixed = new List<object?>
+        {
+            new User { Id = 1, FirstName = "A", LastName = "a" },
+            null,
+            new User { Id = 2, FirstName = "B", LastName = "b" }
+        };
+
+        var dtos = mapper.MapCollection<UserDto>(mixed.Cast<object>().ToList()).ToList();
+
+        Assert.Equal(3, dtos.Count);
+        Assert.Equal("A", dtos[0].FirstName);
+        Assert.NotNull(dtos[1]);
+        Assert.Equal(0, dtos[1].Id);
+        Assert.Equal("", dtos[1].FirstName);
+        Assert.Equal("B", dtos[2].FirstName);
+    }
+
+    [Fact]
     public void Test_NestedObjectMapping_Success()
     {
         // Arrange
